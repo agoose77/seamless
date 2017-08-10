@@ -3,7 +3,7 @@ from grammars.python import PythonTokenizer
 from ast import literal_eval
 
 
-FUNNEL_KEYWORDS = frozenset(['Type', 'Enum', 'Integer', 'String', 'Bool', 'Float', 'form', 'validate'])
+FUNNEL_KEYWORDS = frozenset(['Type', 'Enum', 'form', 'validate'])
 
 
 class FunnelTokenizer(PythonTokenizer):

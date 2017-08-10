@@ -1,7 +1,8 @@
 file_input: (type | NEWLINE)* ENDMARKER
 type: 'Type' NAME ':' suite
 
-suite: NEWLINE INDENT (body_stmt|NEWLINE)+ DEDENT
+suite: NEWLINE INDENT [docstring] (body_stmt|NEWLINE)+ DEDENT
+docstring: LIT* NEWLINE
 
 body_stmt: stmt | block
 
@@ -11,8 +12,8 @@ stmt: declaration_stmt
 declaration_stmt: default_stmt | optional_stmt | default_array_stmt
 
 # Could parse specific types here, but complicates parser
-default_stmt: typed_id ['=' py_expr_statement] NEWLINE
-default_array_stmt: typed_id array_length ['=' '[' py_expr_stmt+ ']'] NEWLINE
+default_stmt: typed_id ['=' py_test_list] NEWLINE
+default_array_stmt: typed_id array_length ['=' '[' py_test_list_comp ']'] NEWLINE
 optional_stmt: '*' typed_id [array_length] NEWLINE
 
 array_length: '[' NUMBER ']'
@@ -25,10 +26,10 @@ generic_id: NAME NAME
 typed_id: enum_id | builtin_id | generic_id
 
 # block stmts
-block: form_block | validate_block
+block: form_block | validate_block | py_func_def
 
 form_block: 'form' ':' block_suite
 validate_block: 'validate' ':' block_suite
 
 block_suite: py_suite | if_stmt_inline
-if_stmt_inline: 'if' py_test ':' py_simple_stmt
+if_stmt_inline: 'if' py_test ':'

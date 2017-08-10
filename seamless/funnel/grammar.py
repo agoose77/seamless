@@ -19,8 +19,10 @@ def emit_type(args):
 
 
 def emit_suite(args):
-    _, _, stmts, _ = unpack(args, 4)
+    _, _, docstring, stmts, _ = unpack(args, 5)
     valid_stmts = tuple([s for s in stmts if s != '\n'])
+    if docstring != '':
+        valid_stmts = (docstring,) + valid_stmts
     return valid_stmts
 
 
@@ -148,31 +150,49 @@ def emit_if_stmt(args):
     return py_ast.If(test, (body,), ()),
 
 
+def emit_docstring(args):
+    literals, _ = args
+    if literals == '':
+        return ''
+    return ast.Docstring(''.join(literals))
+
+
 f = Grammar('EBNF')
+
+# Python inherited parsers
+f.py_test_list = p.test_list
+f.py_simple_stmt = p.simple_stmt
+f.py_suite = p.suite
+f.py_func_def = p.func_def
+f.py_test = p.test
+f.py_test_list_comp = p.test_list_comp
+
+# Funnel parsers
 f.file_input = ((f.type | lit('NEWLINE'))[...] & lit('ENDMARKER')) >> emit_file_input
 f.type = (lit('Type') & lit('ID') & lit(':') & f.suite) >> emit_type
-f.suite = (lit('NEWLINE') & lit('INDENT') & (f.body_stmt | lit('NEWLINE'))[1:] & lit('DEDENT')) >> emit_suite
+f.suite = (lit('NEWLINE') & lit('INDENT') & ~f.docstring & (f.body_stmt | lit('NEWLINE'))[1:] & lit('DEDENT')) >> emit_suite
 f.body_stmt = f.stmt | f.block
 f.stmt = f.declaration_stmt
+f.docstring = (lit('LIT')[1:] & lit('NEWLINE')) >> emit_docstring
 
 # declaration stmts
 f.declaration_stmt = f.default_stmt | f.optional_stmt | f.default_array_stmt
-f.default_array_stmt = (f.typed_id & f.array_length & ~(lit('=') & lit('[') & p.test_list_comp & lit(']')) &
+f.default_array_stmt = (f.typed_id & f.array_length & ~(lit('=') & lit('[') & f.py_test_list_comp & lit(']')) &
                         lit('NEWLINE')) >> emit_default_array_field
-f.default_stmt = (f.typed_id & ~(lit('=') & p.test_list) & lit('NEWLINE')) >> emit_default_field
+f.default_stmt = (f.typed_id & ~(lit('=') & f.py_test_list) & lit('NEWLINE')) >> emit_default_field
 f.optional_stmt = (lit('*') & f.typed_id & ~f.array_length & lit('NEWLINE')) >> emit_nullable
 f.array_length = (lit('[') & lit('NUMBER') & lit(']')) >> emit_subscript
 
 # type declarations
 f.enum_id = (lit('Enum') & lit('ID') & lit('(') & lit('LIT') & (lit(',') & lit('LIT'))[1:] & lit(')')) >> emit_enum
-f.builtin_id = ((lit("Integer") | lit("Bool") | lit("String") | lit("Float")) & lit('ID')) >> emit_generic_id
 f.generic_id = (lit('ID') & lit('ID')) >> emit_generic_id
-f.typed_id = f.enum_id | f.builtin_id | f.generic_id
+f.typed_id = f.enum_id | f.generic_id
 
 # block stmts
-f.block = f.form_block | f.validate_block
+f.block = f.form_block | f.validate_block | f.py_func_def
 f.form_block = (lit('form') & lit(':') & f.block_suite) >> emit_form_block
 f.validate_block = (lit('validate') & lit(':') & f.block_suite) >> emit_validate_block
-f.block_suite = p.suite | f.if_stmt_inline
-f.if_stmt_inline = (lit('if') & p.test & lit(':') & p.simple_stmt) >> emit_if_stmt
-f.ensure_parsers_defined()
+f.block_suite = f.py_suite | f.if_stmt_inline
+f.if_stmt_inline = (lit('if') & f.py_test & lit(':') & f.py_simple_stmt) >> emit_if_stmt
+
+f.validate()

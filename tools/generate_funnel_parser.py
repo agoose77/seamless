@@ -8,12 +8,19 @@ from derp import Grammar, lit
 from grammars.python import p
 
 {variable} = Grammar({name!r})
-{rules}
-{variable}.py_expr_stmt = p.expr_stmt
+
+# Python inherited parsers
+{variable}.py_test_list = p.test_list
 {variable}.py_simple_stmt = p.simple_stmt
-{variable}.py_test = p.test
 {variable}.py_suite = p.suite
-{variable}.ensure_parsers_defined()
+{variable}.py_func_def = p.func_def
+{variable}.py_test = p.test
+{variable}.py_test_list_comp = p.test_list_comp
+
+# Funnel parsers
+{rules}
+
+{variable}.freeze()
 """
 
 
