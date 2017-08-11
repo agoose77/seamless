@@ -4,15 +4,21 @@ from time import time
 
 from copy import deepcopy
 
-from derp.ast import write_ast, NodeVisitor
+from derp.ast import write_ast, NodeVisitor, walk
 from derp import parse
-from seamless.funnel import f, FunnelTokenizer
+from seamless.funnel import f, FunnelTokenizer, ast
 
 from lxml import etree as ET
 from lxml.builder import E
 
 from grammars.python import SourceGenerator
 from grammars.python import ast as py_ast
+
+def find_ast(node, cls):
+    for n in walk(node):
+        if isinstance(n, cls):
+            yield n
+
 
 class Visitor(NodeVisitor):
 
@@ -23,60 +29,65 @@ class Visitor(NodeVisitor):
 
         return ''.join(gen.result)
 
-    def visit_FormBlock(self, node):
+    def visit_FormBlock(self, node, type_def):
         source_code = self._py_block_to_source(node.body)
-        return E.formblock(source_code)
+        type_def.append(E.formblock(source_code))
 
-    def visit_ValidateBlock(self, node):
+    def visit_ValidateBlock(self, node, type_def):
         source_code = self._py_block_to_source(node.body)
-        return E.validateblock(source_code)
+        type_def.append(E.validateblock(source_code))
 
-    def visit_Docstring(self, node):
-        return E.docstring(node.string)
+    def visit_Docstring(self, node, type_def):
+        type_def.append(E.docstring(node.string))
 
-    def visit_IDField(self, node):
+    def append_type_info(self, member, type_, type_def):
+        if isinstance(type_, ast.EnumType):
+            enum_string = ', '.join(repr(f) for f in type_.options)
+            member.append(E.enum(enum_string))
+            member.append(E.type("String"))
+
+        elif isinstance(type_, ast.GenericType):
+            member.append(E.type(type_.id))
+
+        else:
+            self.append_type_info(member, type_.etype, type_def)
+            member.append(E.array(str(type_.length)))
+
+    def visit_OptionalField(self, node, type_def):
         member = E.member(
             E.name(node.name),
-            E.type(node.type)
+            optional='1'
         )
+        self.append_type_info(member, node.type, type_def)
+        type_def.append(member)
 
-        return member
-
-    def visit_EnumField(self, node):
-        enum_string = ', '.join(repr(f) for f in node.options)
+    def visit_Field(self, node, type_def):
         member = E.member(
             E.name(node.name),
-            E.type("String"),
-            E.enum(enum_string)
         )
-        return member
+        self.append_type_info(member, node.type, type_def)
+        type_def.append(member)
 
-    def visit_Nullable(self, node):
-        xml = self.visit(node.field)
-        new_xml = deepcopy(xml)
-        new_xml.set('optional', '1')
-        return new_xml
+    def visit_DefaultField(self, node, type_def):
+        member = E.member(
+            E.name(node.name),
+            E.init(str(node.default))
+        )
+        self.append_type_info(member, node.type, type_def)
+        type_def.append(member)
 
-    def visit_Default(self, node):
-        xml = self.visit(node.field)
-        new_xml = deepcopy(xml)
-        new_xml.append(E.init(repr(node.value)))
-        return new_xml
+    def visit_FunnelType(self, node, module):
+        type_def = E.silk(typename=node.name)
+        module.append(type_def)
 
-
-    def visit_FunnelType(self, node):
-        type_ = E.silk(typename=node.name)
         for child in node.body:
-            field = self.visit(child)
-            type_.append(field)
-        return type_
+            self.visit(child, type_def=type_def)
 
     def visit_FunnelModule(self, node):
         root = E.silkspace()
 
         for silk_type in node.types:
-            tree = self.visit(silk_type)
-            root.append(tree)
+            self.visit(silk_type, module=root)
 
         return root
 
@@ -103,10 +114,10 @@ def main():
     finish_time = time()
 
     if not result:
-        print("Failed to parse Python source")
+        print("Failed to parse Funnel source")
 
     elif len(result) > 1:
-        print("Ambiguous parse of Python source, mutliple parse trees")
+        print("Ambiguous parse of Funnel source, mutliple parse trees")
 
     else:
         print("Parsed in {:.3f}s".format(finish_time - start_time))
